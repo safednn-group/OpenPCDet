@@ -4,6 +4,10 @@
         {
         "class_name":"multi_track_vehicle.car", 
         "iou_threshold":0.5
+        },
+        {
+        "class_name":"human.single.pedestrian", 
+        "iou_threshold":0.5
         }
     ],
     "num_score_thresholds":10,
