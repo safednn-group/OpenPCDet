@@ -245,8 +245,22 @@ class DartsDataset(DatasetTemplate):
         results = evaluator.evaluate(
             darts_pc_det.darts, DARTSAnnotations(**darts_annos), evaluation_config
         )
-        self.logger.info(f"Results: {results}")
-        return results, results
+        ret_dict = {
+            "mAP": results.m_ap,
+        }
+
+        result_str = (
+            f"DARTS Evaluation\n"
+            f"mAP: {results.m_ap:.6f}\n"
+        )
+
+        for class_result in results.class_results:
+            ret_dict[f"{class_result.class_name}_AP"] = class_result.ap
+            result_str += (
+                f"{class_result.class_name}: "
+                f"AP={class_result.ap:.6f}\n"
+            )
+        return result_str, ret_dict
 
     def create_groundtruth_database(self, used_classes=None):
 
