@@ -297,7 +297,7 @@ def transform_det_annos_to_darts_annos(
                 "boxes": darts_annos_by_sample[sample.token],
             }
         )
-        darts_annos["sequences"][scene["token"]] = frames
+        darts_annos["sequences"][scene.token] = frames
 
     return darts_annos
 
