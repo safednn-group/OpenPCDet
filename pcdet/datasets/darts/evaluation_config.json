@@ -1,0 +1,13 @@
+{
+    "class_thresholds":
+    [
+        {
+        "class_name":"multi_track_vehicle.car", 
+        "iou_threshold":0.5
+        }
+    ],
+    "num_score_thresholds":10,
+    "pr_curve_density":0.05,
+    "pr_rounding":6,
+    "min_gt_lidar_points":0
+}

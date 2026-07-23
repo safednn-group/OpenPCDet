@@ -12,6 +12,13 @@ from ..dataset import DatasetTemplate
 from pyquaternion import Quaternion
 from PIL import Image
 import torch
+import darts_devkit.evaluation as ev
+from darts_devkit import EvaluateRegistry
+from darts_devkit.evaluation.evaluation_models import DARTSAnnotations
+from darts_devkit.evaluation.polygon_overlap_evaluator import (
+    PolygonOverlapEvaluationConfig,
+    ClassThresholdConfig,
+)
 
 
 class DartsDataset(DatasetTemplate):
@@ -199,18 +206,47 @@ class DartsDataset(DatasetTemplate):
 
         return data_dict
 
+    def load_config(self, path: str) -> PolygonOverlapEvaluationConfig:
+        with open(path, "r") as f:
+            data = json.load(f)
+
+        return PolygonOverlapEvaluationConfig(
+            class_thresholds=[
+                ClassThresholdConfig(
+                    class_name=item["class_name"],
+                    iou_threshold=item["iou_threshold"],
+                )
+                for item in data["class_thresholds"]
+            ],
+            num_score_thresholds=data["num_score_thresholds"],
+            pr_curve_density=data["pr_curve_density"],
+            pr_rounding=data["pr_rounding"],
+            min_gt_lidar_points=data["min_gt_lidar_points"],
+        )
+
     def evaluation(self, det_annos, class_names, **kwargs):
-        darts = darts_utils.DARTS(
+        darts_pc_det = darts_utils.DARTSPcDet(
             version=self.dataset_cfg.VERSION, dataroot=str(self.root_path)
         )
-        darts_annos = darts_utils.transform_det_annos_to_darts_annos(det_annos, darts)
+        darts_annos = darts_utils.transform_det_annos_to_darts_annos(
+            det_annos, darts_pc_det
+        )
         output_path = Path(kwargs["output_path"])
         output_path.mkdir(exist_ok=True, parents=True)
         res_path = str(output_path / "results_darts.json")
         with open(res_path, "w") as f:
             json.dump(darts_annos, f)
-        self.logger.info(f"The predictions have been saved to {res_path}")
-        return "To run evaluation use darts-devkit", {}
+
+        ev.register_polygon_overlap_evaluator()
+        evaluator = EvaluateRegistry().get("PolygonOverlapEvaluator")()
+        evaluation_config = self.load_config(
+            Path(__file__).parent / "evaluation_config.json"
+        )
+        results = evaluator.evaluate(
+            darts_pc_det.darts, DARTSAnnotations(**darts_annos), evaluation_config
+        )
+        self.logger.info(f"Results: {results}")
+        return results, results
 
     def create_groundtruth_database(self, used_classes=None):
 
@@ -274,15 +310,15 @@ def create_darts_info(version, data_path, save_path, with_cam=False):
 
     data_path = data_path / version
     save_path = save_path / version
-    darts = darts_utils.DARTS(version=version, dataroot=data_path)
-    train_scenes = darts.splits["train"]
-    val_scenes = darts.splits["val"]
-    scenes = list(darts.scene.values())
-    scene_names = [s["name"] for s in scenes]
+    darts_pc_det = darts_utils.DARTSPcDet(version=version, dataroot=data_path)
+    train_scenes = darts_pc_det.darts.splits.train
+    val_scenes = darts_pc_det.darts.splits.val
+    scenes = list(darts_pc_det.darts.scene.all())
+    scene_names = [s.name for s in scenes]
     train_scenes = list(filter(lambda x: x in scene_names, train_scenes))
     val_scenes = list(filter(lambda x: x in scene_names, val_scenes))
-    train_scenes = set([scenes[scene_names.index(s)]["token"] for s in train_scenes])
-    val_scenes = set([scenes[scene_names.index(s)]["token"] for s in val_scenes])
+    train_scenes = set([scenes[scene_names.index(s)].token for s in train_scenes])
+    val_scenes = set([scenes[scene_names.index(s)].token for s in val_scenes])
 
     print(
         "%s: train scene(%d), val scene(%d)"
@@ -291,7 +327,7 @@ def create_darts_info(version, data_path, save_path, with_cam=False):
 
     train_nusc_infos, val_nusc_infos = darts_utils.fill_trainval_infos(
         data_path=data_path,
-        darts=darts,
+        darts_pc_det=darts_pc_det,
         train_scenes=train_scenes,
         val_scenes=val_scenes,
         with_cam=with_cam,
