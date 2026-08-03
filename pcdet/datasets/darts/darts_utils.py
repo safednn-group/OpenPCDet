@@ -3,7 +3,7 @@ import numpy as np
 import tqdm
 from pyquaternion import Quaternion
 from typing import List, Dict
-from darts_devkit import DARTS
+from darts_devkit import DARTS as DARTSDevkit
 
 
 class Box:
@@ -104,21 +104,21 @@ class Box:
         self.orientation = quaternion * self.orientation
 
 
-class DARTSPcDet:
+class DARTS:
     def __init__(self, dataroot, version) -> None:
         self._root = Path(dataroot)
         self._version = version
-        self.darts = DARTS(self._root, self._version)
+        self.darts_devkit = DARTSDevkit(self._root, self._version)
 
     def get_box(self, sample_annotation_token: str) -> Box:
         """
         Instantiates a Box class from a sample annotation record.
         :param sample_annotation_token: Unique sample_annotation identifier.
         """
-        sample_annotation_record = self.darts.sample_annotation.get(
+        sample_annotation_record = self.darts_devkit.sample_annotation.get(
             sample_annotation_token
         )
-        category_record = self.darts.get_category_from_annotation(
+        category_record = self.darts_devkit.get_category_from_annotation(
             sample_annotation_record.token
         )
         return Box(
@@ -139,22 +139,22 @@ class DARTSPcDet:
         """
 
         # Retrieve sensor & pose records
-        sd_record = self.darts.sample_data.get(sample_data_token)
-        curr_sample_record = self.darts.sample.get(sd_record.sample_token)
+        sd_record = self.darts_devkit.sample_data.get(sample_data_token)
+        curr_sample_record = self.darts_devkit.sample.get(sd_record.sample_token)
 
         if curr_sample_record.prev == "" or sd_record.is_key_frame:
             # If no previous annotations available, or if sample_data is keyframe just return the current ones.
             boxes = list(map(self.get_box, curr_sample_record.anns))
 
         else:
-            prev_sample_record = self.darts.sample.get(curr_sample_record.prev)
+            prev_sample_record = self.darts_devkit.sample.get(curr_sample_record.prev)
 
             curr_ann_recs = [
-                self.darts.sample_annotation.get(token)
+                self.darts_devkit.sample_annotation.get(token)
                 for token in curr_sample_record.anns
             ]
             prev_ann_recs = [
-                self.darts.sample_annotation.get(token)
+                self.darts_devkit.sample_annotation.get(token)
                 for token in prev_sample_record.anns
             ]
 
@@ -188,7 +188,7 @@ class DARTSPcDet:
                         q1=Quaternion(curr_ann_rec.rotation),
                         amount=(t - t0) / (t1 - t0),
                     )
-                    category_record = self.darts.get_category_from_annotation(
+                    category_record = self.darts_devkit.get_category_from_annotation(
                         curr_ann_rec.token
                     )
                     box = Box(
@@ -226,16 +226,16 @@ def boxes_lidar_to_darts(det_info) -> List[Box]:
 
 
 def lidar_darts_box_to_global(
-    darts_pc_det: DARTSPcDet, boxes: List[Box], sample_token: str
+    darts: DARTS, boxes: List[Box], sample_token: str
 ) -> List[Box]:
-    s_record = darts_pc_det.darts.sample.get(sample_token)
+    s_record = darts.darts_devkit.sample.get(sample_token)
     sample_data_token = s_record.data["LIDAR_TOP"]
 
-    sd_record = darts_pc_det.darts.sample_data.get(sample_data_token)
-    cs_record = darts_pc_det.darts.calibrated_sensor.get(
+    sd_record = darts.darts_devkit.sample_data.get(sample_data_token)
+    cs_record = darts.darts_devkit.calibrated_sensor.get(
         sd_record.calibrated_sensor_token
     )
-    pose_record = darts_pc_det.darts.ego_pose.get(sd_record.ego_pose_token)
+    pose_record = darts.darts_devkit.ego_pose.get(sd_record.ego_pose_token)
 
     box_list = []
     for box in boxes:
@@ -249,9 +249,7 @@ def lidar_darts_box_to_global(
     return box_list
 
 
-def transform_det_annos_to_darts_annos(
-    det_annos, darts_pc_det: DARTSPcDet
-) -> Dict[str, str]:
+def transform_det_annos_to_darts_annos(det_annos, darts: DARTS) -> Dict[str, str]:
     darts_annos_by_sample = {}
     darts_annos = {"sequences": {}}
 
@@ -261,7 +259,7 @@ def transform_det_annos_to_darts_annos(
         darts_annos_by_sample[sample_token] = []
         box_list = boxes_lidar_to_darts(det)
         box_list = lidar_darts_box_to_global(
-            darts_pc_det=darts_pc_det, boxes=box_list, sample_token=sample_token
+            darts=darts, boxes=box_list, sample_token=sample_token
         )
 
         for k, box in enumerate(box_list):
@@ -277,11 +275,11 @@ def transform_det_annos_to_darts_annos(
 
         darts_annos_by_sample[sample_token] = annos
 
-    val_split = darts_pc_det.darts.splits.val
-    for scene in darts_pc_det.darts.scene.all():
+    val_split = darts.darts_devkit.splits.val
+    for scene in darts.darts_devkit.scene.all():
         if scene.name not in val_split:
             continue
-        sample = darts_pc_det.darts.sample.get(scene.first_sample_token)
+        sample = darts.darts_devkit.sample.get(scene.first_sample_token)
         frames = []
         while sample.next != "":
             frames.append(
@@ -290,7 +288,7 @@ def transform_det_annos_to_darts_annos(
                     "boxes": darts_annos_by_sample[sample.token],
                 }
             )
-            sample = darts_pc_det.darts.sample.get(sample.next)
+            sample = darts.darts_devkit.sample.get(sample.next)
         frames.append(
             {
                 "sample_token": sample.token,
@@ -347,7 +345,7 @@ def transform_matrix(
 
 
 def obtain_sensor2top(
-    darts_pc_det: DARTSPcDet,
+    darts: DARTS,
     sensor_token,
     l2e_t,
     l2e_r_mat,
@@ -372,10 +370,10 @@ def obtain_sensor2top(
     Returns:
         sweep (dict): Sweep information after transformation.
     """
-    sd_rec = darts_pc_det.darts.sample_data.get(sensor_token)
-    cs_record = darts_pc_det.darts.calibrated_sensor.get(sd_rec.calibrated_sensor_token)
-    pose_record = darts_pc_det.darts.ego_pose.get(sd_rec.ego_pose_token)
-    data_path = str(darts_pc_det.darts._get_sensor_data_path(sd_rec))
+    sd_rec = darts.darts_devkit.sample_data.get(sensor_token)
+    cs_record = darts.darts_devkit.calibrated_sensor.get(sd_rec.calibrated_sensor_token)
+    pose_record = darts.darts_devkit.ego_pose.get(sd_rec.ego_pose_token)
+    data_path = str(darts.darts_devkit._get_sensor_data_path(sd_rec))
     sweep = {
         "data_path": data_path,
         "type": sensor_type,
@@ -410,9 +408,7 @@ def obtain_sensor2top(
     return sweep
 
 
-def get_sample_data(
-    darts_pc_det: DARTSPcDet, sample_data_token: str, selected_anntokens=None
-):
+def get_sample_data(darts: DARTS, sample_data_token: str, selected_anntokens=None):
     """
     Returns the data path as well as all annotations related to that sample_data.
     Note that the boxes are transformed into the current sensor's coordinate frame.
@@ -425,14 +421,14 @@ def get_sample_data(
 
     """
     # Retrieve sensor & pose records
-    sd_record = darts_pc_det.darts.sample_data.get(sample_data_token)
-    cs_record = darts_pc_det.darts.calibrated_sensor.get(
+    sd_record = darts.darts_devkit.sample_data.get(sample_data_token)
+    cs_record = darts.darts_devkit.calibrated_sensor.get(
         sd_record.calibrated_sensor_token
     )
-    sensor_record = darts_pc_det.darts.sensor.get(cs_record.sensor_token)
-    pose_record = darts_pc_det.darts.ego_pose.get(sd_record.ego_pose_token)
+    sensor_record = darts.darts_devkit.sensor.get(cs_record.sensor_token)
+    pose_record = darts.darts_devkit.ego_pose.get(sd_record.ego_pose_token)
 
-    data_path = darts_pc_det.darts._get_sensor_data_path(sd_record)
+    data_path = darts.darts_devkit._get_sensor_data_path(sd_record)
 
     if sensor_record.modality == "camera":
         cam_intrinsic = np.array(cs_record.camera_intrinsic)
@@ -441,9 +437,9 @@ def get_sample_data(
 
     # Retrieve all sample annotations and map to sensor coordinate system.
     if selected_anntokens is not None:
-        boxes = list(map(darts_pc_det.get_box, selected_anntokens))
+        boxes = list(map(darts.get_box, selected_anntokens))
     else:
-        boxes = darts_pc_det.get_boxes(sample_data_token)
+        boxes = darts.get_boxes(sample_data_token)
 
     # Make list of Box objects including coord system transforms.
     box_list = []
@@ -462,19 +458,19 @@ def get_sample_data(
 
 
 def fill_trainval_infos(
-    data_path, darts_pc_det: DARTSPcDet, train_scenes, val_scenes, with_cam=False
+    data_path, darts: DARTS, train_scenes, val_scenes, with_cam=False
 ):
     train_nusc_infos = []
     val_nusc_infos = []
     progress_bar = tqdm.tqdm(
-        total=len(darts_pc_det.darts.sample.all()),
+        total=len(darts.darts_devkit.sample.all()),
         desc="create_info",
         dynamic_ncols=True,
     )
 
     ref_chan = "LIDAR_TOP"  # The radar channel from which we track back n sweeps to aggregate the point cloud.
 
-    for sample in darts_pc_det.darts.sample.all():
+    for sample in darts.darts_devkit.sample.all():
         if (
             sample.scene_token not in val_scenes
             and sample.scene_token not in train_scenes
@@ -483,19 +479,17 @@ def fill_trainval_infos(
         progress_bar.update()
 
         ref_sd_token = sample.data[ref_chan]
-        ref_sd_rec = darts_pc_det.darts.sample_data.get(ref_sd_token)
-        ref_cs_rec = darts_pc_det.darts.calibrated_sensor.get(
+        ref_sd_rec = darts.darts_devkit.sample_data.get(ref_sd_token)
+        ref_cs_rec = darts.darts_devkit.calibrated_sensor.get(
             ref_sd_rec.calibrated_sensor_token
         )
-        ref_pose_rec = darts_pc_det.darts.ego_pose.get(ref_sd_rec.ego_pose_token)
+        ref_pose_rec = darts.darts_devkit.ego_pose.get(ref_sd_rec.ego_pose_token)
         ref_time = 1e-6 * ref_sd_rec.timestamp
 
-        ref_lidar_path, ref_boxes, _ = get_sample_data(darts_pc_det, ref_sd_token)
+        ref_lidar_path, ref_boxes, _ = get_sample_data(darts, ref_sd_token)
 
         ref_cam_front_token = sample.data["CAM_FRONT"]
-        ref_cam_path, _, ref_cam_intrinsic = get_sample_data(
-            darts_pc_det, ref_cam_front_token
-        )
+        ref_cam_path, _, ref_cam_intrinsic = get_sample_data(darts, ref_cam_front_token)
 
         # Homogeneous transform from ego car frame to reference frame
         ref_from_car = transform_matrix(
@@ -539,9 +533,9 @@ def fill_trainval_infos(
             ]
             for cam in camera_types:
                 cam_token = sample["data"][cam]
-                _, _, camera_intrinsics = get_sample_data(darts_pc_det, cam_token)
+                _, _, camera_intrinsics = get_sample_data(darts, cam_token)
                 cam_info = obtain_sensor2top(
-                    darts_pc_det, cam_token, l2e_t, l2e_r_mat, e2g_t, e2g_r_mat, cam
+                    darts, cam_token, l2e_t, l2e_r_mat, e2g_t, e2g_r_mat, cam
                 )
                 cam_info["data_path"] = (
                     Path(cam_info["data_path"]).relative_to(data_path).__str__()
@@ -550,7 +544,7 @@ def fill_trainval_infos(
                 info["cams"].update({cam: cam_info})
 
         annotations = [
-            darts_pc_det.darts.sample_annotation.get(token) for token in sample.anns
+            darts.darts_devkit.sample_annotation.get(token) for token in sample.anns
         ]
 
         num_lidar_pts = np.array([anno.num_lidar_pts for anno in annotations])
