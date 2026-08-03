@@ -532,7 +532,7 @@ def fill_trainval_infos(
                 "CAM_BACK_RIGHT",
             ]
             for cam in camera_types:
-                cam_token = sample["data"][cam]
+                cam_token = sample.data[cam]
                 _, _, camera_intrinsics = get_sample_data(darts, cam_token)
                 cam_info = obtain_sensor2top(
                     darts, cam_token, l2e_t, l2e_r_mat, e2g_t, e2g_r_mat, cam

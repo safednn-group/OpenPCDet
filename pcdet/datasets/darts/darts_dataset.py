@@ -225,11 +225,11 @@ class DartsDataset(DatasetTemplate):
         )
 
     def evaluation(self, det_annos, class_names, **kwargs):
-        darts_pc_det = darts_utils.DARTSPcDet(
+        darts = darts_utils.DARTS(
             version=self.dataset_cfg.VERSION, dataroot=str(self.root_path)
         )
         darts_annos = darts_utils.transform_det_annos_to_darts_annos(
-            det_annos, darts_pc_det
+            det_annos, darts
         )
         output_path = Path(kwargs["output_path"])
         output_path.mkdir(exist_ok=True, parents=True)
@@ -243,7 +243,7 @@ class DartsDataset(DatasetTemplate):
             Path(__file__).parent / "evaluation_config.json"
         )
         results = evaluator.evaluate(
-            darts_pc_det.darts, DARTSAnnotations(**darts_annos), evaluation_config
+            darts.darts_devkit, DARTSAnnotations(**darts_annos), evaluation_config
         )
         with open(output_path / "evaluation_results.json", "w") as f:
             json.dump(results.model_dump(), f, indent=4)
@@ -318,10 +318,10 @@ def create_darts_info(version, data_path, save_path, with_cam=False):
 
     data_path = data_path / version
     save_path = save_path / version
-    darts_pc_det = darts_utils.DARTSPcDet(version=version, dataroot=data_path)
-    train_scenes = darts_pc_det.darts.splits.train
-    val_scenes = darts_pc_det.darts.splits.val
-    scenes = list(darts_pc_det.darts.scene.all())
+    darts = darts_utils.DARTS(version=version, dataroot=data_path)
+    train_scenes = darts.darts_devkit.splits.train
+    val_scenes = darts.darts_devkit.splits.val
+    scenes = list(darts.darts_devkit.scene.all())
     scene_names = [s.name for s in scenes]
     train_scenes = list(filter(lambda x: x in scene_names, train_scenes))
     val_scenes = list(filter(lambda x: x in scene_names, val_scenes))
@@ -335,7 +335,7 @@ def create_darts_info(version, data_path, save_path, with_cam=False):
 
     train_nusc_infos, val_nusc_infos = darts_utils.fill_trainval_infos(
         data_path=data_path,
-        darts_pc_det=darts_pc_det,
+        darts=darts,
         train_scenes=train_scenes,
         val_scenes=val_scenes,
         with_cam=with_cam,
