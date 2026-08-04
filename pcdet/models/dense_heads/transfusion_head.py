@@ -391,7 +391,12 @@ class TransFusionHead(nn.Module):
         targets[:, 6] = torch.sin(bboxes[:, 6])
         targets[:, 7] = torch.cos(bboxes[:, 6])
         if code_size == 10:
-            targets[:, 8:10] = bboxes[:, 7:]
+            # DARTS config does not produce velocity
+            # but bevfusion expects it (it is hardcoded)
+            if bboxes.shape[1] >= 9:
+                targets[:, 8:10] = bboxes[:, 7:9]
+            else:
+                targets[:, 8:10] = 0.0
         return targets
 
     def decode_bbox(self, heatmap, rot, dim, center, height, vel, filter=False):

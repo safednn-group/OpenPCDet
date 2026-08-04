@@ -522,6 +522,7 @@ def fill_trainval_infos(
             e2g_r_mat = Quaternion(e2g_r).rotation_matrix
 
             # obtain 7 image's information per frame
+            # change to 6 if using bevfusion (it is hardcoded)
             camera_types = [
                 "CAM_FRONT",
                 "CAM_FRONT_TELE",
